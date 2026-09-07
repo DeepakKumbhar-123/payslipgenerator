@@ -64,7 +64,7 @@ type PayslipData = {
 
 const initialEarnings: Row[] = [
   { name: 'BASIC', rate: '', amount: '' },
-  { name: 'HRA', rate: '', amount: '' },
+  { name: 'HRA', rate: '10%', amount: '' },
   { name: 'CON.', rate: '', amount: '' },
   { name: 'Other Allowance', rate: '', amount: '' },
   { name: 'Over Time', rate: '', amount: '' },
@@ -101,6 +101,21 @@ function money(n: number) {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
+}
+
+function payslipMonth(value: string) {
+  if (!value) return '';
+
+  const date = new Date(value + 'T00:00:00');
+
+  if (!Number.isNaN(date.getTime())) {
+    return date.toLocaleDateString('en-IN', {
+      month: 'long',
+      year: 'numeric',
+    });
+  }
+
+  return value;
 }
 
 function words(n: number) {
@@ -204,8 +219,6 @@ function Slip({ data }: { data: PayslipData }) {
         />
 
         <div className="company-head">
-          <div className="paytitle">PAYSLIP</div>
-
           <div className="company-name">
             {data.company.name}
           </div>
@@ -213,6 +226,13 @@ function Slip({ data }: { data: PayslipData }) {
           <div className="address">
             {data.company.address}
           </div>
+        </div>
+
+        <div className="month-head">
+          <div>Payslip For the Month</div>
+          <strong>
+            {payslipMonth(data.employee.payDate)}
+          </strong>
         </div>
       </div>
 
@@ -435,13 +455,65 @@ export default function Home() {
     key: keyof Row,
     value: string
   ) => {
-    setEarnings((x) =>
-      x.map((r, j) =>
+    setEarnings((rows) => {
+      const updated = rows.map((row, j) =>
         j === i
-          ? { ...r, [key]: value }
-          : r
-      )
-    );
+          ? { ...row, [key]: value }
+          : row
+      );
+
+      const changedRow = updated[i];
+
+      if (!changedRow) {
+        return updated;
+      }
+
+      const changedName =
+        changedRow.name.trim().toUpperCase();
+
+      // BASIC = Rate Per Day × 26 fixed days
+      if (
+        changedName === 'BASIC' &&
+        key === 'rate'
+      ) {
+        const basicRate =
+          Number(value) || 0;
+
+        const basicAmount =
+          basicRate * 26;
+
+        return updated.map((row) => {
+          const name =
+            row.name.trim().toUpperCase();
+
+          if (name === 'BASIC') {
+            return {
+              ...row,
+              amount:
+                basicRate
+                  ? String(basicAmount)
+                  : '',
+            };
+          }
+
+          // HRA = 10% of BASIC
+          if (name === 'HRA') {
+            return {
+              ...row,
+              rate: '10%',
+              amount:
+                basicAmount
+                  ? String(basicAmount * 0.10)
+                  : '',
+            };
+          }
+
+          return row;
+        });
+      }
+
+      return updated;
+    });
   };
 
   const setDed = (
@@ -1093,52 +1165,60 @@ export default function Home() {
               </div>
 
               {earnings.map(
-                (row, i) => (
+                (row, i) => {
+                  const isBasic =
+                    row.name.trim().toUpperCase() === 'BASIC';
 
-                  <div
-                    className="row-edit"
-                    key={i}
-                  >
+                  const isHra =
+                    row.name.trim().toUpperCase() === 'HRA';
 
-                    <input
-                      value={row.name}
-                      onChange={(e) =>
-                        setEarn(
-                          i,
-                          'name',
-                          e.target.value
-                        )
-                      }
-                      placeholder="Component"
-                    />
+                  return (
+                    <div
+                      className="row-edit"
+                      key={i}
+                    >
 
-                    <input
-                      type="number"
-                      value={row.rate}
-                      onChange={(e) =>
-                        setEarn(
-                          i,
-                          'rate',
-                          e.target.value
-                        )
-                      }
-                      placeholder="Rate"
-                    />
+                      <input
+                        value={row.name}
+                        onChange={(e) =>
+                          setEarn(
+                            i,
+                            'name',
+                            e.target.value
+                          )
+                        }
+                        placeholder="Component"
+                      />
 
-                    <input
-                      type="number"
-                      value={row.amount}
-                      onChange={(e) =>
-                        setEarn(
-                          i,
-                          'amount',
-                          e.target.value
-                        )
-                      }
-                      placeholder="Amount"
-                    />
+                      <input
+                        type={isHra ? 'text' : 'number'}
+                        value={row.rate}
+                        onChange={(e) =>
+                          setEarn(
+                            i,
+                            'rate',
+                            e.target.value
+                          )
+                        }
+                        placeholder="Rate"
+                        readOnly={isHra}
+                      />
 
-                    <button
+                      <input
+                        type="number"
+                        value={row.amount}
+                        onChange={(e) =>
+                          setEarn(
+                            i,
+                            'amount',
+                            e.target.value
+                          )
+                        }
+                        placeholder="Amount"
+                        readOnly={isBasic || isHra}
+                      />
+
+                      <button
                       type="button"
                       className="delete-button"
                       onClick={() =>
@@ -1153,9 +1233,9 @@ export default function Home() {
                       <Trash2 size={15} />
                     </button>
 
-                  </div>
-
-                )
+                    </div>
+                  );
+                }
               )}
 
               <div className="total-edit">
@@ -1420,7 +1500,7 @@ export default function Home() {
                 </h2>
 
                 <p>
-                  Review your payslip before printing or saving it as PDF.
+                  Review your payslip before saving it as PDF.
                 </p>
 
               </div>
@@ -1430,7 +1510,7 @@ export default function Home() {
                 onClick={print}
               >
                 <Download size={18} />
-                Print / Save as PDF
+                Save as PDF
               </button>
 
             </div>
