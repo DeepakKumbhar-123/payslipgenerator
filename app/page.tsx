@@ -16,6 +16,7 @@ import {
   FileText,
   Sparkles,
 } from 'lucide-react';
+import { jsPDF } from 'jspdf';
 
 type Row = {
   name: string;
@@ -674,9 +675,235 @@ export default function Home() {
     setGenerated(null);
   };
 
-  /* PRINT */
-  const print = () => {
-    window.print();
+  /* SAVE DIRECTLY AS A5 PDF */
+  const print = async () => {
+    const source = document.getElementById('payslip-print');
+
+    if (!source) {
+      alert('Please generate the payslip first.');
+      return;
+    }
+
+    try {
+      const html2canvasModule = await import('html2canvas');
+      const html2canvas = html2canvasModule.default;
+
+      // Render a dedicated A5 copy so the desktop layout/CSS
+      // can never force the PDF into an A4-like proportion.
+      const wrapper = document.createElement('div');
+      wrapper.style.position = 'fixed';
+      wrapper.style.left = '-10000px';
+      wrapper.style.top = '0';
+      wrapper.style.width = '148mm';
+      wrapper.style.height = '210mm';
+      wrapper.style.background = '#fff';
+      wrapper.style.overflow = 'hidden';
+      wrapper.style.zIndex = '-1';
+
+      const clone = source.cloneNode(true) as HTMLElement;
+      clone.removeAttribute('id');
+
+      const style = document.createElement('style');
+      style.textContent = `
+        * {
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+          box-sizing: border-box !important;
+        }
+
+        .paper {
+          width: 148mm !important;
+          height: 210mm !important;
+          max-width: 148mm !important;
+          max-height: 210mm !important;
+          margin: 0 !important;
+          padding: 8mm 8mm 5mm !important;
+          background: #fff !important;
+          border: 0 !important;
+          box-shadow: none !important;
+          overflow: hidden !important;
+          position: relative !important;
+        }
+
+        .slip-head {
+          display: grid !important;
+          grid-template-columns: 30mm 1fr 38mm !important;
+          align-items: center !important;
+          min-height: 28mm !important;
+          height: 28mm !important;
+          border-bottom: 1px solid #cfd4dc !important;
+          padding-bottom: 2mm !important;
+        }
+
+        .slip-head img {
+          max-width: 25mm !important;
+          max-height: 22mm !important;
+          object-fit: contain !important;
+        }
+
+        .company-head {
+          text-align: left !important;
+          padding-right: 2mm !important;
+        }
+
+        .company-name {
+          font-size: 12px !important;
+          line-height: 1.15 !important;
+          margin-top: 0 !important;
+        }
+
+        .address {
+          font-size: 7px !important;
+          line-height: 1.25 !important;
+          margin-top: 1mm !important;
+        }
+
+        .month-head {
+          text-align: right !important;
+          display: flex !important;
+          flex-direction: column !important;
+          justify-content: center !important;
+          align-items: flex-end !important;
+          gap: 1.5mm !important;
+        }
+
+        .month-head div {
+          font-size: 8px !important;
+          color: #555 !important;
+        }
+
+        .month-head strong {
+          font-size: 10px !important;
+          color: #000 !important;
+        }
+
+        .employee-box {
+          display: grid !important;
+          grid-template-columns: 1fr 1fr !important;
+          margin: 3mm 0 4mm !important;
+          padding: 5px 8px !important;
+        }
+
+        .employee-box p {
+          display: grid !important;
+          grid-template-columns: 27mm 4mm 1fr !important;
+          margin: 2.5px 0 !important;
+          font-size: 8.5px !important;
+        }
+
+        .salary {
+          width: 100% !important;
+          border-collapse: collapse !important;
+          font-size: 8.5px !important;
+        }
+
+        .salary th {
+          padding: 5px 3px !important;
+          font-size: 8.5px !important;
+          height: 7mm !important;
+        }
+
+        .salary td {
+          height: 6mm !important;
+          padding: 3px 5px !important;
+        }
+
+        .salary .totals td {
+          font-size: 8.5px !important;
+          height: 7mm !important;
+        }
+
+        .netrow td {
+          font-size: 9.5px !important;
+          height: 7mm !important;
+        }
+
+        .amount-box {
+          margin-top: 3mm !important;
+          padding: 5px 7px !important;
+          gap: 3px !important;
+          font-size: 8.5px !important;
+        }
+
+        .amount-box b {
+          font-size: 10.5px !important;
+        }
+
+        .stamp-box {
+          margin-top: 3mm !important;
+          min-height: 22mm !important;
+          height: 22mm !important;
+        }
+
+        .stamp-box img {
+          max-width: 35mm !important;
+          max-height: 15mm !important;
+          object-fit: contain !important;
+        }
+
+        .stamp-box span {
+          font-size: 7px !important;
+        }
+
+        .foot {
+          margin-top: 2mm !important;
+          padding-top: 2mm !important;
+          font-size: 7px !important;
+        }
+      `;
+
+      wrapper.appendChild(style);
+      wrapper.appendChild(clone);
+      document.body.appendChild(wrapper);
+
+      // Wait one frame so the browser lays out the clone at true A5 dimensions.
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => resolve())
+      );
+
+      const canvas = await html2canvas(clone, {
+        width: Math.round((148 / 25.4) * 96),
+        height: Math.round((210 / 25.4) * 96),
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        logging: false,
+      });
+
+      document.body.removeChild(wrapper);
+
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a5',
+        compress: true,
+      });
+
+      pdf.addImage(
+        canvas.toDataURL('image/png'),
+        'PNG',
+        0,
+        0,
+        148,
+        210,
+        undefined,
+        'FAST'
+      );
+
+      const employeeName =
+        employee.name.trim().replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '') ||
+        'Employee';
+
+      const month =
+        payslipMonth(employee.payDate)
+          .replace(/\s+/g, '-')
+          .replace(/[^a-z0-9-]/gi, '') || 'Payslip';
+
+      pdf.save(`${employeeName}-${month}-Payslip.pdf`);
+    } catch (error) {
+      console.error('A5 PDF generation failed:', error);
+      alert('Could not create the A5 PDF. Please try again.');
+    }
   };
 
   return (
