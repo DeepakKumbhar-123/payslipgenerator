@@ -60,6 +60,11 @@ type PayslipData = {
   payFields: PayField[];
   earnings: Row[];
   deductions: Deduction[];
+  advance: {
+    total: string;
+    deduction: string;
+    balance: string;
+  };
   stamp: string;
 };
 
@@ -76,7 +81,7 @@ const initialDeductions: Deduction[] = [
   { name: 'ESIC', amount: '' },
   { name: 'P.T.', amount: '' },
   { name: 'LWF', amount: '' },
-  { name: 'ADV.', amount: '' },
+  { name: 'LOAN', amount: '' },
 ];
 
 const initialCompany: Company = {
@@ -303,7 +308,7 @@ function Slip({ data }: { data: PayslipData }) {
       </div>
 
       {/* SALARY TABLE */}
-      <table className="salary">
+      <table className="salary salary-with-advance">
         <thead>
           <tr>
             <th>Earnings</th>
@@ -311,21 +316,16 @@ function Slip({ data }: { data: PayslipData }) {
             <th>Earning</th>
             <th>Deductions</th>
             <th>Amount</th>
+            <th>Advance</th>
           </tr>
         </thead>
 
         <tbody>
-
-          {Array.from({ length: rows }).map((_, i) => (
+          {Array.from({ length: Math.max(rows, 3) }).map((_, i) => (
             <tr key={i}>
+              <td>{data.earnings[i]?.name || ''}</td>
 
-              <td>
-                {data.earnings[i]?.name || ''}
-              </td>
-
-              <td>
-                {data.earnings[i]?.rate || ''}
-              </td>
+              <td>{data.earnings[i]?.rate || ''}</td>
 
               <td>
                 {data.earnings[i]
@@ -333,46 +333,75 @@ function Slip({ data }: { data: PayslipData }) {
                   : ''}
               </td>
 
-              <td>
-                {data.deductions[i]?.name || ''}
-              </td>
+              <td>{data.deductions[i]?.name || ''}</td>
 
               <td>
                 {data.deductions[i]
-                  ? money(
-                      Number(data.deductions[i].amount) || 0
-                    )
+                  ? money(Number(data.deductions[i].amount) || 0)
                   : ''}
               </td>
 
+              <td className="advance-cell">
+                {i === 0 && Number(data.advance.total) > 0 ? (
+                  <div>
+                    <span>Advance</span>
+                    <em>:</em>
+                    <b>{money(Number(data.advance.total) || 0)}</b>
+                  </div>
+                ) : null}
+
+                {i === 1 && Number(data.advance.deduction) > 0 ? (
+                  <div>
+                    <span>Deducted</span>
+                    <em>:</em>
+                    <b>-{money(Number(data.advance.deduction) || 0)}</b>
+                  </div>
+                ) : null}
+              </td>
             </tr>
           ))}
 
           <tr className="totals">
             <td colSpan={2}>GROSS PAY</td>
-
             <td>{money(gross)}</td>
-
             <td>TOTAL DEDUCTION</td>
-
             <td>{money(totalDed)}</td>
+            <td className="advance-balance-cell">
+              {Number(data.advance.total) > 0 ? (
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'flex-end',
+                    gap: '7px',
+                    width: '100%',
+                    whiteSpace: 'nowrap',
+                    paddingRight: '6px',
+                  }}
+                >
+                  <span style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>BALANCE</span>
+                  <span style={{ fontWeight: 700 }}>:</span>
+                  <b style={{ whiteSpace: 'nowrap' }}>
+                    {money(Number(data.advance.balance) || 0)}
+                  </b>
+                </div>
+              ) : null}
+            </td>
           </tr>
 
           <tr className="netrow">
             <td colSpan={3}></td>
-
             <td>NET AMOUNT</td>
-
             <td>{money(net)}</td>
+            <td></td>
           </tr>
-
         </tbody>
       </table>
 
       {/* NET PAY */}
       <div className="amount-box">
         <b>
-          Net payment Amount : ₹ {money(net)}
+          Net Amount = Gross Pay (₹ {money(gross)}) - Total Deduction (₹ {money(totalDed)}) = ₹ {money(net)}
         </b>
 
         <span>
@@ -431,6 +460,9 @@ export default function Home() {
   const [generated, setGenerated] =
     useState<PayslipData | null>(null);
 
+  const [advanceTotal, setAdvanceTotal] = useState('');
+  const [advanceDeduction, setAdvanceDeduction] = useState('');
+
   const gross = earnings.reduce(
     (s, r) => s + (Number(r.amount) || 0),
     0
@@ -440,6 +472,23 @@ export default function Home() {
     (s, r) => s + (Number(r.amount) || 0),
     0
   );
+
+  const advanceBalance = Math.max(
+    0,
+    (Number(advanceTotal) || 0) - (Number(advanceDeduction) || 0)
+  );
+
+  const updateAdvanceDeduction = (value: string) => {
+    setAdvanceDeduction(value);
+
+    setDeductions((rows) =>
+      rows.map((row) =>
+        row.name.trim().toUpperCase() === 'LOAN'
+          ? { ...row, amount: value }
+          : row
+      )
+    );
+  };
 
   const setEmp = (
     key: keyof Employee,
@@ -529,6 +578,13 @@ export default function Home() {
           : r
       )
     );
+
+    if (
+      key === 'amount' &&
+      deductions[i]?.name.trim().toUpperCase() === 'LOAN'
+    ) {
+      setAdvanceDeduction(value);
+    }
   };
 
   const setEmpCustom = (
@@ -626,6 +682,12 @@ export default function Home() {
           })
         ),
 
+      advance: {
+        total: advanceTotal,
+        deduction: advanceDeduction,
+        balance: String(advanceBalance),
+      },
+
       stamp,
     });
 
@@ -669,6 +731,9 @@ export default function Home() {
         })
       )
     );
+
+    setAdvanceTotal('');
+    setAdvanceDeduction('');
 
     setStamp('');
 
@@ -795,6 +860,108 @@ export default function Home() {
           width: 100% !important;
           border-collapse: collapse !important;
           font-size: 8.5px !important;
+        }
+
+        .salary-with-advance {
+          table-layout: fixed !important;
+        }
+
+        .salary-with-advance th:nth-child(1),
+        .salary-with-advance td:nth-child(1) {
+          width: 22% !important;
+        }
+
+        .salary-with-advance th:nth-child(2),
+        .salary-with-advance td:nth-child(2) {
+          width: 14% !important;
+        }
+
+        .salary-with-advance th:nth-child(3),
+        .salary-with-advance td:nth-child(3) {
+          width: 13% !important;
+        }
+
+        .salary-with-advance th:nth-child(4),
+        .salary-with-advance td:nth-child(4) {
+          width: 19% !important;
+        }
+
+        .salary-with-advance th:nth-child(5),
+        .salary-with-advance td:nth-child(5) {
+          width: 12% !important;
+        }
+
+        .salary-with-advance th:nth-child(6),
+        .salary-with-advance td:nth-child(6) {
+          width: 20% !important;
+        }
+
+        .advance-cell {
+          text-align: right !important;
+          vertical-align: middle !important;
+          padding: 2px 4px !important;
+        }
+
+        .advance-cell div,
+        .advance-balance-cell div {
+          display: grid !important;
+          grid-template-columns: auto auto 1fr !important;
+          align-items: center !important;
+          column-gap: 3px !important;
+          line-height: 1.2 !important;
+          width: 100% !important;
+        }
+
+        .advance-cell span,
+        .advance-balance-cell span {
+          font-size: 7px !important;
+          font-weight: 600 !important;
+          text-align: left !important;
+          white-space: nowrap !important;
+        }
+
+        .advance-cell em,
+        .advance-balance-cell em {
+          font-size: 7px !important;
+          font-style: normal !important;
+          font-weight: 600 !important;
+        }
+
+        .advance-cell b,
+        .advance-balance-cell b {
+          font-size: 7.5px !important;
+          white-space: nowrap !important;
+          text-align: right !important;
+        }
+
+        .advance-balance-cell {
+          text-align: right !important;
+          vertical-align: middle !important;
+          padding: 2px 8px 2px 10px !important;
+        }
+
+        .advance-balance-cell div {
+          display: flex !important;
+          align-items: center !important;
+          justify-content: flex-end !important;
+          gap: 8px !important;
+          width: 100% !important;
+          margin: 0 !important;
+          padding-right: 4px !important;
+          white-space: nowrap !important;
+        }
+
+        .advance-balance-cell span {
+          text-align: left !important;
+        }
+
+        .advance-balance-cell em {
+          padding: 0 !important;
+          margin: 0 !important;
+        }
+
+        .advance-balance-cell b {
+          text-align: right !important;
         }
 
         .salary th {
@@ -1584,6 +1751,67 @@ export default function Home() {
 
                 )
               )}
+
+              <div
+                className="advance-entry"
+                style={{
+                  marginTop: '18px',
+                  padding: '12px',
+                  border: '1px solid #e4e7ec',
+                  borderRadius: '10px',
+                  background: '#fffdf2',
+                }}
+              >
+                <div
+                  style={{
+                    fontWeight: 700,
+                    marginBottom: '8px',
+                    fontSize: '14px',
+                  }}
+                >
+                  Advance
+                </div>
+
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 1fr 1fr',
+                    gap: '10px',
+                  }}
+                >
+                  <label>
+                    Total Advance
+                    <input
+                      type="number"
+                      value={advanceTotal}
+                      onChange={(e) => setAdvanceTotal(e.target.value)}
+                      placeholder="0"
+                    />
+                  </label>
+
+                  <label>
+                    Deduct This Month
+                    <input
+                      type="number"
+                      value={advanceDeduction}
+                      onChange={(e) =>
+                        updateAdvanceDeduction(e.target.value)
+                      }
+                      placeholder="0"
+                    />
+                  </label>
+
+                  <label>
+                    Balance Advance
+                    <input
+                      type="number"
+                      value={advanceBalance || ''}
+                      readOnly
+                      placeholder="0"
+                    />
+                  </label>
+                </div>
+              </div>
 
               <div className="total-edit">
 
