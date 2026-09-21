@@ -2780,13 +2780,13 @@ export default function Home() {
 
               </div>
 
-              <button
-                className="download"
-                onClick={print}
-              >
-                <Download size={18} />
-                Save as PDF
-              </button>
+             <button
+  className="download"
+  onClick={() => print()}
+>
+  <Download size={18} />
+  Save as PDF
+</button>
 
             </div>
 
