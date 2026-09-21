@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Plus,
   Trash2,
@@ -15,8 +15,10 @@ import {
   PenTool,
   FileText,
   Sparkles,
+  Search,
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
+import { supabase } from '../lib/supabase';
 
 type Row = {
   name: string;
@@ -36,6 +38,7 @@ type CustomField = {
 
 type Employee = {
   payDate: string;
+  paymentDate: string;
   name: string;
   working: string;
   present: string;
@@ -68,6 +71,24 @@ type PayslipData = {
   stamp: string;
 };
 
+type PayslipRecord = {
+  id: string; pay_date: string; payment_date: string | null; working_days: number | null; present_days: number | null;
+  gross_amount: number | null; total_deductions: number | null; net_amount: number | null; advance_total: number | null; advance_amount: number | null; advance_balance: number | null;
+  employee_id: string; employee_snapshot: Employee | null; earnings_snapshot: Row[] | null;
+  deductions_snapshot: Deduction[] | null; pay_fields_snapshot: PayField[] | null; employeeName: string;
+};
+
+
+type EmployeeRecord = {
+  id: string;
+  employee_code: string | null;
+  name: string;
+  uan: string | null;
+  esic_number: string | null;
+  custom_fields?: CustomField[] | null;
+  created_at?: string | null;
+};
+
 const initialEarnings: Row[] = [
   { name: 'BASIC', rate: '', amount: '' },
   { name: 'HRA', rate: '10%', amount: '' },
@@ -92,6 +113,7 @@ const initialCompany: Company = {
 
 const initialEmployee: Employee = {
   payDate: '',
+  paymentDate: '',
   name: '',
   working: '',
   present: '',
@@ -107,6 +129,23 @@ function money(n: number) {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
+}
+
+function rateDisplay(
+  value: string | number | null | undefined,
+  isOvertime = false
+) {
+  if (value === '' || value === null || value === undefined) return '';
+
+  const n = Number(value);
+  if (!Number.isFinite(n) || n === 0) return '';
+
+  const formatted = n.toLocaleString('en-IN', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  });
+
+  return isOvertime ? `${formatted} hrs` : formatted;
 }
 
 function payslipMonth(value: string) {
@@ -247,9 +286,9 @@ function Slip({ data }: { data: PayslipData }) {
 
         <div>
           <p>
-            <b>Pay Date</b>
+            <b>Salary Month</b>
             <span>:</span>
-            {data.employee.payDate}
+            {payslipMonth(data.employee.payDate)}
           </p>
 
           <p>
@@ -294,6 +333,12 @@ function Slip({ data }: { data: PayslipData }) {
             {data.employee.esic}
           </p>
 
+          <p>
+            <b>Payment Date</b>
+            <span>:</span>
+            {data.employee.paymentDate || '—'}
+          </p>
+
           {data.payFields
             .filter((f) => f.name || f.value)
             .map((f, i) => (
@@ -325,7 +370,12 @@ function Slip({ data }: { data: PayslipData }) {
             <tr key={i}>
               <td>{data.earnings[i]?.name || ''}</td>
 
-              <td>{data.earnings[i]?.rate || ''}</td>
+              <td>
+                {rateDisplay(
+                  data.earnings[i]?.rate,
+                  data.earnings[i]?.name?.trim().toUpperCase() === 'OVER TIME'
+                )}
+              </td>
 
               <td>
                 {data.earnings[i]
@@ -434,6 +484,117 @@ function Slip({ data }: { data: PayslipData }) {
   );
 }
 
+type DashboardStats = {
+  totalEmployees: number;
+  monthPayslips: number;
+  totalPayroll: number;
+  outstandingAdvances: number;
+};
+
+const emptyDashboardStats: DashboardStats = {
+  totalEmployees: 0,
+  monthPayslips: 0,
+  totalPayroll: 0,
+  outstandingAdvances: 0,
+};
+
+function Dashboard({
+  onCreatePayslip,
+  onEmployees,
+  onViewAll,
+  onViewPayslip,
+  stats,
+  loading,
+  recentPayslips,
+}: {
+  onCreatePayslip: () => void;
+  onEmployees: () => void;
+  onViewAll: () => void;
+  onViewPayslip: (record: PayslipRecord) => void;
+  stats: DashboardStats;
+  loading: boolean;
+  recentPayslips: PayslipRecord[];
+}) {
+  return (
+    <div className="dashboard-page">
+      <div className="dashboard-intro">
+        <div>
+          <div className="eyebrow"><Sparkles size={14} /> PAYROLL MANAGEMENT</div>
+          <h1>Dashboard</h1>
+          <p>Manage employees, payroll and payslips from one place.</p>
+        </div>
+        <button className="dashboard-primary" onClick={onCreatePayslip}>
+          <Plus size={17} /> Create Payslip
+        </button>
+      </div>
+
+      <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' }}>
+        <div className="stat-card">
+          <div className="stat-icon employee-icon"><UserRound size={19} /></div>
+          <div><span>Total Employees</span><strong>{loading ? '…' : stats.totalEmployees}</strong><small>Total employees</small></div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-icon pay-icon"><FileText size={19} /></div>
+          <div><span>This Month's Payslips</span><strong>{loading ? '…' : stats.monthPayslips}</strong><small>Based on payment date</small></div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-icon earning-icon"><TrendingUp size={19} /></div>
+          <div><span>Total Payroll</span><strong>{loading ? '…' : `₹ ${money(stats.totalPayroll)}`}</strong><small>Current month</small></div>
+        </div>
+      </div>
+
+      <div className="dashboard-grid">
+        <div className="dashboard-card quick-card">
+          <div className="dashboard-card-head"><div><h3>Quick Actions</h3><p>Start your most common payroll tasks.</p></div></div>
+          <div className="quick-actions">
+            <button onClick={onCreatePayslip}><FileText size={18} /><span><b>Create Payslip</b><small>Generate a monthly payslip</small></span><Plus size={16} /></button>
+            <button onClick={onEmployees}><UserRound size={18} /><span><b>Employee Records</b><small>Search saved employees</small></span><Plus size={16} /></button>
+          </div>
+        </div>
+
+        <div className="dashboard-card recent-card">
+          <div className="dashboard-card-head"><div><h3>Recent Payslips</h3><p>Your latest generated payslips will appear here.</p></div><button className="text-button" onClick={onViewAll}>View All</button></div>
+          {recentPayslips.length === 0 ? (
+            <div className="empty-dashboard">
+              <div className="empty-icon"><FileText size={21} /></div>
+              <b>No payslips yet</b>
+              <span>Once you generate a payslip, it will be listed here.</span>
+              <button onClick={onCreatePayslip}>Create your first payslip</button>
+            </div>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                <thead>
+                  <tr>
+                    <th style={{ textAlign: 'left', padding: '10px 8px', borderBottom: '1px solid #e4e7ec' }}>Employee</th>
+                    <th style={{ textAlign: 'left', padding: '10px 8px', borderBottom: '1px solid #e4e7ec' }}>Month</th>
+                    <th style={{ textAlign: 'right', padding: '10px 8px', borderBottom: '1px solid #e4e7ec' }}>Gross</th>
+                    <th style={{ textAlign: 'right', padding: '10px 8px', borderBottom: '1px solid #e4e7ec' }}>Net</th>
+                    <th style={{ textAlign: 'right', padding: '10px 8px', borderBottom: '1px solid #e4e7ec' }}>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recentPayslips.map((record) => (
+                    <tr key={record.id}>
+                      <td style={{ padding: '11px 8px', borderBottom: '1px solid #f0f2f5' }}>{record.employeeName}</td>
+                      <td style={{ padding: '11px 8px', borderBottom: '1px solid #f0f2f5' }}>{payslipMonth(record.pay_date)}</td>
+                      <td style={{ padding: '11px 8px', textAlign: 'right', borderBottom: '1px solid #f0f2f5' }}>₹ {money(Number(record.gross_amount) || 0)}</td>
+                      <td style={{ padding: '11px 8px', textAlign: 'right', borderBottom: '1px solid #f0f2f5' }}>₹ {money(Number(record.net_amount) || 0)}</td>
+                      <td style={{ padding: '11px 8px', textAlign: 'right', borderBottom: '1px solid #f0f2f5' }}>
+                        <button type="button" className="add-button" onClick={() => onViewPayslip(record)}>View</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Home() {
   const [company, setCompany] =
     useState<Company>(initialCompany);
@@ -460,8 +621,159 @@ export default function Home() {
   const [generated, setGenerated] =
     useState<PayslipData | null>(null);
 
+  const [currentPage, setCurrentPage] = useState<'dashboard' | 'employees' | 'create' | 'payslips'>('dashboard');
+  const [records, setRecords] = useState<PayslipRecord[]>([]);
+  const [recordSearch, setRecordSearch] = useState('');
+  const [recordsLoading, setRecordsLoading] = useState(false);
+  const [recordsError, setRecordsError] = useState('');
+  const [employeeMatches, setEmployeeMatches] = useState<Array<{ id: string; name: string; uan: string | null; esic_number: string | null; custom_fields: CustomField[] | null }>>([]);
+  const [employeeLookupLoading, setEmployeeLookupLoading] = useState(false);
+
   const [advanceTotal, setAdvanceTotal] = useState('');
   const [advanceDeduction, setAdvanceDeduction] = useState('');
+  const [dashboardStats, setDashboardStats] = useState<DashboardStats>(emptyDashboardStats);
+  const [dashboardRecentPayslips, setDashboardRecentPayslips] = useState<PayslipRecord[]>([]);
+  const [dashboardLoading, setDashboardLoading] = useState(true);
+  const [employeeRecords, setEmployeeRecords] = useState<EmployeeRecord[]>([]);
+  const [employeeRecordsLoading, setEmployeeRecordsLoading] = useState(false);
+  const [employeeRecordsError, setEmployeeRecordsError] = useState('');
+  const [employeeRecordSearch, setEmployeeRecordSearch] = useState('');
+
+  const loadEmployeeRecords = async () => {
+    setEmployeeRecordsLoading(true);
+    setEmployeeRecordsError('');
+
+    const { data, error } = await supabase
+      .from('employees')
+      .select('id, employee_code, name, uan, esic_number, custom_fields, created_at')
+      .order('name', { ascending: true });
+
+    if (error) {
+      console.error('Employee records load error:', error);
+      setEmployeeRecordsError(error.message);
+      setEmployeeRecords([]);
+    } else {
+      setEmployeeRecords((data || []) as EmployeeRecord[]);
+    }
+
+    setEmployeeRecordsLoading(false);
+  };
+
+  const deleteEmployeeRecord = async (employeeRecord: EmployeeRecord) => {
+    const confirmed = window.confirm(
+      `Delete ${employeeRecord.name}?\n\nThis will also delete all saved payslips for this employee. This action cannot be undone.`
+    );
+
+    if (!confirmed) return;
+
+    setEmployeeRecordsError('');
+
+    const { error: payslipDeleteError } = await supabase
+      .from('payslips')
+      .delete()
+      .eq('employee_id', employeeRecord.id);
+
+    if (payslipDeleteError) {
+      console.error('Employee payslip delete error:', payslipDeleteError);
+      setEmployeeRecordsError(
+        `Could not delete payslips for ${employeeRecord.name}: ${payslipDeleteError.message}`
+      );
+      return;
+    }
+
+    const { error: employeeDeleteError } = await supabase
+      .from('employees')
+      .delete()
+      .eq('id', employeeRecord.id);
+
+    if (employeeDeleteError) {
+      console.error('Employee delete error:', employeeDeleteError);
+      setEmployeeRecordsError(
+        `Could not delete employee ${employeeRecord.name}: ${employeeDeleteError.message}`
+      );
+      return;
+    }
+
+    setRecords((current) =>
+      current.filter((record) => record.employee_id !== employeeRecord.id)
+    );
+
+    setDashboardRecentPayslips((current) =>
+      current.filter((record) => record.employee_id !== employeeRecord.id)
+    );
+
+    await loadEmployeeRecords();
+    await loadPayslipRecords();
+    await loadDashboardStats();
+  };
+
+  const loadDashboardStats = async () => {
+    setDashboardLoading(true);
+
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const nextMonth = new Date(year, month + 1, 1);
+    const toDate = (d: Date) => {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    };
+
+    const [employeeResult, monthResult, payrollResult, advanceResult, recentResult] = await Promise.all([
+      supabase.from('employees').select('id', { count: 'exact', head: true }),
+      supabase.from('payslips').select('id', { count: 'exact', head: true }).gte('payment_date', toDate(firstDay)).lt('payment_date', toDate(nextMonth)),
+      supabase.from('payslips').select('net_amount').gte('payment_date', toDate(firstDay)).lt('payment_date', toDate(nextMonth)),
+      supabase.from('payslips').select('employee_id, pay_date, created_at, advance_balance').order('pay_date', { ascending: false }).order('created_at', { ascending: false }),
+      supabase.from('payslips').select('id, pay_date, payment_date, gross_amount, total_deductions, net_amount, employee_id, employee_snapshot, earnings_snapshot, deductions_snapshot, pay_fields_snapshot, created_at').order('pay_date', { ascending: false }).order('created_at', { ascending: false }).limit(5),
+    ]);
+
+    const payroll = (payrollResult.data || []).reduce((sum: number, row: any) => sum + (Number(row.net_amount) || 0), 0);
+
+    const latestByEmployee = new Map<string, number>();
+    (advanceResult.data || []).forEach((row: any) => {
+      if (!latestByEmployee.has(row.employee_id)) {
+        latestByEmployee.set(row.employee_id, Number(row.advance_balance) || 0);
+      }
+    });
+    const outstandingAdvances = Array.from(latestByEmployee.values()).reduce((sum, value) => sum + value, 0);
+
+    if (employeeResult.error || monthResult.error || payrollResult.error || advanceResult.error || recentResult.error) {
+      console.error('Dashboard data load error:', employeeResult.error || monthResult.error || payrollResult.error || advanceResult.error || recentResult.error);
+    }
+
+    const recentRows = recentResult.data || [];
+    const recentEmployeeIds = Array.from(new Set(recentRows.map((r: any) => r.employee_id).filter(Boolean)));
+    let recentNames = new Map<string, string>();
+    if (recentEmployeeIds.length) {
+      const { data: recentEmployees, error: recentEmployeesError } = await supabase.from('employees').select('id, name').in('id', recentEmployeeIds);
+      if (recentEmployeesError) {
+        console.error('Recent payslips employee lookup error:', recentEmployeesError);
+      } else {
+        recentNames = new Map((recentEmployees || []).map((r: any) => [r.id, r.name]));
+      }
+    }
+    setDashboardRecentPayslips(recentRows.map((r: any) => ({
+      ...r,
+      working_days: null,
+      present_days: null,
+      employeeName: r.employee_snapshot?.name || recentNames.get(r.employee_id) || 'Employee',
+    })));
+
+    setDashboardStats({
+      totalEmployees: employeeResult.count || 0,
+      monthPayslips: monthResult.count || 0,
+      totalPayroll: payroll,
+      outstandingAdvances,
+    });
+    setDashboardLoading(false);
+  };
+
+  useEffect(() => {
+    loadDashboardStats();
+  }, []);
 
   const gross = earnings.reduce(
     (s, r) => s + (Number(r.amount) || 0),
@@ -507,54 +819,75 @@ export default function Home() {
   ) => {
     setEarnings((rows) => {
       const updated = rows.map((row, j) =>
-        j === i
-          ? { ...row, [key]: value }
-          : row
+        j === i ? { ...row, [key]: value } : row
       );
 
       const changedRow = updated[i];
+      if (!changedRow) return updated;
 
-      if (!changedRow) {
-        return updated;
-      }
+      const changedName = changedRow.name.trim().toUpperCase();
 
-      const changedName =
-        changedRow.name.trim().toUpperCase();
+      // BASIC uses a fixed 26-day structure.
+      // You can enter either Rate Per Day OR BASIC Amount directly.
+      // IMPORTANT: clearing Rate Per Day must NOT clear BASIC Amount.
+      if (changedName === 'BASIC' && (key === 'rate' || key === 'amount')) {
+        if (key === 'rate') {
+          // If the user clears Rate Per Day, keep the existing BASIC amount.
+          // Only recalculate when a numeric rate is actually entered.
+          if (value.trim() === '') {
+            return updated;
+          }
 
-      // BASIC = Rate Per Day × 26 fixed days
-      if (
-        changedName === 'BASIC' &&
-        key === 'rate'
-      ) {
-        const basicRate =
-          Number(value) || 0;
+          const basicRate = Number(value);
+          if (!Number.isFinite(basicRate)) return updated;
 
-        const basicAmount =
-          basicRate * 26;
+          const basicAmount = basicRate * 26;
+
+          return updated.map((row) => {
+            const name = row.name.trim().toUpperCase();
+
+            if (name === 'BASIC') {
+              return {
+                ...row,
+                rate: value,
+                amount: String(basicAmount),
+              };
+            }
+
+            if (name === 'HRA') {
+              return {
+                ...row,
+                rate: '10%',
+                amount: String(basicAmount * 0.10),
+              };
+            }
+
+            return row;
+          });
+        }
+
+        // Direct BASIC amount entry: calculate Rate Per Day from it.
+        const basicAmount = Number(value);
+        if (!Number.isFinite(basicAmount)) return updated;
+
+        const basicRate = basicAmount / 26;
 
         return updated.map((row) => {
-          const name =
-            row.name.trim().toUpperCase();
+          const name = row.name.trim().toUpperCase();
 
           if (name === 'BASIC') {
             return {
               ...row,
-              amount:
-                basicRate
-                  ? String(basicAmount)
-                  : '',
+              amount: value,
+              rate: basicAmount ? basicRate.toFixed(2) : '',
             };
           }
 
-          // HRA = 10% of BASIC
           if (name === 'HRA') {
             return {
               ...row,
               rate: '10%',
-              amount:
-                basicAmount
-                  ? String(basicAmount * 0.10)
-                  : '',
+              amount: basicAmount ? String(basicAmount * 0.10) : '',
             };
           }
 
@@ -565,7 +898,6 @@ export default function Home() {
       return updated;
     });
   };
-
   const setDed = (
     i: number,
     key: keyof Deduction,
@@ -643,9 +975,292 @@ export default function Home() {
     reader.readAsDataURL(file);
   };
 
-  /* GENERATE */
-  const generatePayslip = () => {
+  const searchEmployees = async (value: string) => {
+    const query = value.trim();
+    if (!query) {
+      setEmployeeMatches([]);
+      return;
+    }
+
+    setEmployeeLookupLoading(true);
+    const { data, error } = await supabase
+      .from('employees')
+      .select('id, name, uan, esic_number, custom_fields')
+      .ilike('name', `%${query}%`)
+      .order('name', { ascending: true })
+      .limit(6);
+
+    if (error) {
+      console.error('EMPLOYEE SEARCH ERROR:', error);
+      setEmployeeMatches([]);
+    } else {
+      setEmployeeMatches(data || []);
+    }
+
+    setEmployeeLookupLoading(false);
+  };
+
+  const selectEmployee = async (saved: {
+    id: string;
+    name: string;
+    uan: string | null;
+    esic_number: string | null;
+    custom_fields: CustomField[] | null;
+  }) => {
+    setEmployeeMatches([]);
+
+    setEmployee((current) => ({
+      ...current,
+      id: saved.id,
+      name: saved.name,
+      uan: saved.uan || '',
+      esic: saved.esic_number || '',
+      customFields: saved.custom_fields || [],
+    }));
+
+    // Employee master is now the source of truth for permanent employee fields.
+    // Payslip history is used only for the previous outstanding advance balance.
+    const { data: latestPayslip, error } = await supabase
+      .from('payslips')
+      .select('advance_total, advance_amount, advance_balance')
+      .eq('employee_id', saved.id)
+      .order('pay_date', { ascending: false })
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (!error && latestPayslip) {
+      const previousBalance = Number(latestPayslip.advance_balance) || 0;
+      setAdvanceTotal(previousBalance > 0 ? String(previousBalance) : '');
+      setAdvanceDeduction('');
+
+      setDeductions((rows) =>
+        rows.map((row) =>
+          row.name.trim().toUpperCase() === 'LOAN'
+            ? { ...row, amount: '' }
+            : row
+        )
+      );
+    } else {
+      setAdvanceTotal('');
+      setAdvanceDeduction('');
+    }
+  };
+
+  const loadPayslipRecords = async () => {
+    setRecordsLoading(true); setRecordsError('');
+    const { data: payslipRows, error } = await supabase.from('payslips')
+      .select('id, pay_date, payment_date, working_days, present_days, gross_amount, total_deductions, net_amount, advance_total, advance_amount, advance_balance, employee_id, employee_snapshot, earnings_snapshot, deductions_snapshot, pay_fields_snapshot, created_at')
+      .order('pay_date', { ascending: false }).order('created_at', { ascending: false });
+    if (error) { console.error(error); setRecordsError(error.message); setRecordsLoading(false); return; }
+    const ids = Array.from(new Set((payslipRows || []).map((r: any) => r.employee_id).filter(Boolean)));
+    let names = new Map<string,string>();
+    if (ids.length) {
+      const { data: employees, error: empError } = await supabase.from('employees').select('id, name').in('id', ids);
+      if (empError) { console.error(empError); setRecordsError(empError.message); setRecordsLoading(false); return; }
+      names = new Map((employees || []).map((r: any) => [r.id, r.name]));
+    }
+    setRecords((payslipRows || []).map((r: any) => ({ ...r, employeeName: r.employee_snapshot?.name || names.get(r.employee_id) || 'Employee' })));
+    setRecordsLoading(false);
+  };
+
+  const openSavedPayslip = (record: PayslipRecord) => {
+    const snapshot = record.employee_snapshot as (Employee & { __advance?: PayslipData['advance']; __company?: Company; __stamp?: string }) | null;
+    const savedAdvance = snapshot?.__advance;
+    const fallbackAdvanceTotal = Number((record as any).advance_total) || 0;
+    const fallbackAdvanceDeduction = Number(record.advance_amount) || 0;
+    const fallbackAdvanceBalance = Number((record as any).advance_balance) || 0;
+    const advance = savedAdvance
+      ? {
+          total: savedAdvance.total ?? (fallbackAdvanceTotal ? String(fallbackAdvanceTotal) : ''),
+          deduction: savedAdvance.deduction ?? (fallbackAdvanceDeduction ? String(fallbackAdvanceDeduction) : ''),
+          balance: savedAdvance.balance ?? (fallbackAdvanceBalance ? String(fallbackAdvanceBalance) : ''),
+        }
+      : fallbackAdvanceTotal > 0 || fallbackAdvanceDeduction > 0
+        ? { total: fallbackAdvanceTotal ? String(fallbackAdvanceTotal) : String(fallbackAdvanceDeduction), deduction: fallbackAdvanceDeduction ? String(fallbackAdvanceDeduction) : '', balance: String(fallbackAdvanceBalance) }
+        : { total: '', deduction: '', balance: '' };
+
     setGenerated({
+      company: snapshot?.__company || { ...company },
+      employee: { ...initialEmployee, ...(snapshot || {}), payDate: record.pay_date || snapshot?.payDate || '', paymentDate: record.payment_date || snapshot?.paymentDate || '', working: String(record.working_days ?? snapshot?.working ?? ''), present: String(record.present_days ?? snapshot?.present ?? ''), customFields: snapshot?.customFields || [] },
+      payFields: record.pay_fields_snapshot || [], earnings: record.earnings_snapshot || [], deductions: record.deductions_snapshot || [],
+      advance, stamp: snapshot?.__stamp || '',
+    });
+    setTimeout(() => document.getElementById('saved-slip-preview')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+  };
+
+  /* GENERATE */
+  const generatePayslip = async () => {
+    const employeeName = employee.name.trim();
+
+    if (!employeeName) {
+      alert('Please enter Employee Name first.');
+      return;
+    }
+
+    if (!employee.payDate) {
+      alert('Please enter Salary Month first.');
+      return;
+    }
+
+    // Find existing employee or create a new one.
+    let { data: savedEmployee, error: employeeError } = await supabase
+      .from('employees')
+      .select('id, employee_code, name, uan, esic_number, custom_fields')
+      .eq('name', employeeName)
+      .maybeSingle();
+
+    if (employeeError) {
+      console.error(employeeError);
+      alert('Could not check employee record.');
+      return;
+    }
+
+    if (!savedEmployee) {
+      const { data: newEmployee, error: createEmployeeError } =
+        await supabase
+          .from('employees')
+          .insert({
+            name: employeeName,
+            uan: employee.uan.trim() || null,
+            esic_number: employee.esic.trim() || null,
+            custom_fields: employee.customFields,
+          })
+          .select('id, employee_code, name, uan, esic_number, custom_fields')
+          .single();
+
+      if (createEmployeeError) {
+  console.error('EMPLOYEE SAVE ERROR:', createEmployeeError);
+  alert(
+    `Employee could not be saved.\n\n${createEmployeeError.message}`
+  );
+  return;
+}
+
+      savedEmployee = newEmployee;
+    } else {
+      // Keep saved UAN / ESIC details up to date when they are entered.
+      const { error: updateEmployeeError } = await supabase
+        .from('employees')
+        .update({
+          uan: employee.uan.trim() || null,
+          esic_number: employee.esic.trim() || null,
+          custom_fields: employee.customFields,
+        })
+        .eq('id', savedEmployee.id);
+
+      if (updateEmployeeError) {
+        console.error(updateEmployeeError);
+        alert('Could not update employee record.');
+        return;
+      }
+    }
+
+    const basicRow = earnings.find(
+      (row) => row.name.trim().toUpperCase() === 'BASIC'
+    );
+
+    const hraRow = earnings.find(
+      (row) => row.name.trim().toUpperCase() === 'HRA'
+    );
+
+    const conRow = earnings.find(
+      (row) => row.name.trim().toUpperCase() === 'CON.'
+    );
+
+    const otherAllowanceRow = earnings.find(
+      (row) => row.name.trim().toUpperCase() === 'OTHER ALLOWANCE'
+    );
+
+    const overtimeRow = earnings.find(
+      (row) => row.name.trim().toUpperCase() === 'OVER TIME'
+    );
+
+    const pfRow = deductions.find(
+      (row) => row.name.trim().toUpperCase() === 'P.F.'
+    );
+
+    const esicRow = deductions.find(
+      (row) => row.name.trim().toUpperCase() === 'ESIC'
+    );
+
+    const ptRow = deductions.find(
+      (row) => row.name.trim().toUpperCase() === 'P.T.'
+    );
+
+    const lwfRow = deductions.find(
+      (row) => row.name.trim().toUpperCase() === 'LWF'
+    );
+
+    const basicAmount = Number(basicRow?.amount) || 0;
+    const hraAmount = Number(hraRow?.amount) || 0;
+
+    const grossAmount = earnings.reduce(
+      (sum, row) => sum + (Number(row.amount) || 0),
+      0
+    );
+
+    const totalDeductionAmount = deductions.reduce(
+      (sum, row) => sum + (Number(row.amount) || 0),
+      0
+    );
+
+    const netAmount = grossAmount - totalDeductionAmount;
+
+    const { error: payslipError } = await supabase
+      .from('payslips')
+      .insert({
+        employee_id: savedEmployee.id,
+        pay_date: employee.payDate,
+        payment_date: employee.paymentDate || null,
+        working_days: Number(employee.working) || 0,
+        present_days: Number(employee.present) || 0,
+        basic_rate_per_day: Number(basicRow?.rate) || 0,
+        hra_percent:
+          Number(String(hraRow?.rate || '10').replace('%', '')) || 0,
+        esic_amount: Number(esicRow?.amount) || 0,
+        con_amount: Number(conRow?.amount) || 0,
+        other_allowance: Number(otherAllowanceRow?.amount) || 0,
+        overtime: Number(overtimeRow?.amount) || 0,
+        pf_amount: Number(pfRow?.amount) || 0,
+        pt_amount: Number(ptRow?.amount) || 0,
+        lwf_amount: Number(lwfRow?.amount) || 0,
+        advance_total: Number(advanceTotal) || 0,
+        advance_amount: Number(advanceDeduction) || 0,
+        advance_balance: Number(advanceBalance) || 0,
+        other_deductions: 0,
+        basic_amount: basicAmount,
+        hra_amount: hraAmount,
+        gross_amount: grossAmount,
+        total_deductions: totalDeductionAmount,
+        net_amount: netAmount,
+        employee_snapshot: {
+          ...employee,
+          customFields: employee.customFields.map((field) => ({ ...field })),
+          __advance: { total: advanceTotal, deduction: advanceDeduction, balance: String(advanceBalance) },
+          __company: { ...company },
+          __stamp: stamp,
+        },
+        earnings_snapshot: earnings.map((row) => ({
+          ...row,
+        })),
+        deductions_snapshot: deductions.map((row) => ({
+          ...row,
+        })),
+        pay_fields_snapshot: payFields.map((field) => ({
+          ...field,
+        })),
+      });
+
+    if (payslipError) {
+  console.error('PAYSLIP SAVE ERROR:', payslipError);
+  alert(
+    `Payslip could not be saved.\n\n${payslipError.message}`
+  );
+  return;
+}
+
+    const generatedPayslipData: PayslipData = {
       company: {
         ...company,
       },
@@ -689,7 +1304,15 @@ export default function Home() {
       },
 
       stamp,
-    });
+    };
+
+    // Show the generated payslip first, then automatically save the same
+    // payslip as an A5 PDF. The short wait lets React render #payslip-print
+    // before html2canvas captures it.
+    setGenerated(generatedPayslipData);
+
+    await new Promise<void>((resolve) => setTimeout(resolve, 100));
+    await print(generatedPayslipData);
 
     setTimeout(() => {
       document
@@ -741,11 +1364,11 @@ export default function Home() {
   };
 
   /* SAVE DIRECTLY AS A5 PDF */
-  const print = async () => {
+  const print = async (payslipData: PayslipData | null = generated) => {
     const source = document.getElementById('payslip-print');
 
-    if (!source) {
-      alert('Please generate the payslip first.');
+    if (!source || !payslipData) {
+      alert('Please open a payslip first.');
       return;
     }
 
@@ -757,16 +1380,20 @@ export default function Home() {
       // can never force the PDF into an A4-like proportion.
       const wrapper = document.createElement('div');
       wrapper.style.position = 'fixed';
-      wrapper.style.left = '-10000px';
+      // Keep the clone inside the viewport so html2canvas can render it reliably.
+      wrapper.style.left = '0';
       wrapper.style.top = '0';
       wrapper.style.width = '148mm';
       wrapper.style.height = '210mm';
       wrapper.style.background = '#fff';
       wrapper.style.overflow = 'hidden';
-      wrapper.style.zIndex = '-1';
+      wrapper.style.zIndex = '999999';
+      wrapper.style.pointerEvents = 'none';
 
       const clone = source.cloneNode(true) as HTMLElement;
       clone.removeAttribute('id');
+      clone.style.visibility = 'visible';
+      clone.style.display = 'block';
 
       const style = document.createElement('style');
       style.textContent = `
@@ -914,7 +1541,7 @@ export default function Home() {
 
         .advance-cell span,
         .advance-balance-cell span {
-          font-size: 7px !important;
+          font-size: 8.5px !important;
           font-weight: 600 !important;
           text-align: left !important;
           white-space: nowrap !important;
@@ -922,14 +1549,14 @@ export default function Home() {
 
         .advance-cell em,
         .advance-balance-cell em {
-          font-size: 7px !important;
+          font-size: 8.5px !important;
           font-style: normal !important;
           font-weight: 600 !important;
         }
 
         .advance-cell b,
         .advance-balance-cell b {
-          font-size: 7.5px !important;
+          font-size: 8px !important;
           white-space: nowrap !important;
           text-align: right !important;
         }
@@ -944,10 +1571,10 @@ export default function Home() {
           display: flex !important;
           align-items: center !important;
           justify-content: flex-end !important;
-          gap: 8px !important;
+          gap: 4px !important;
           width: 100% !important;
           margin: 0 !important;
-          padding-right: 4px !important;
+          padding-right: 2px !important;
           white-space: nowrap !important;
         }
 
@@ -1058,11 +1685,11 @@ export default function Home() {
       );
 
       const employeeName =
-        employee.name.trim().replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '') ||
+        payslipData.employee.name.trim().replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '') ||
         'Employee';
 
       const month =
-        payslipMonth(employee.payDate)
+        payslipMonth(payslipData.employee.payDate)
           .replace(/\s+/g, '-')
           .replace(/[^a-z0-9-]/gi, '') || 'Payslip';
 
@@ -1078,36 +1705,163 @@ export default function Home() {
 
       {/* TOP BAR */}
       <header className="appbar">
-
         <div className="brand-area">
-
-          <div className="brand-icon">
-            <FileText size={20} />
-          </div>
-
+          <div className="brand-icon"><FileText size={20} /></div>
           <div>
-            <strong>
-              Deepak Industrial Services
-            </strong>
-
-            <span>
-              Payslip Generator
-            </span>
+            <strong>Deepak Industrial Services</strong>
+            <span>Payroll Management</span>
           </div>
-
         </div>
-
-        <button
-          className="ghost"
-          onClick={reset}
-        >
-          <RotateCcw size={16} />
-          Reset
-        </button>
-
+        {currentPage === 'create' && (
+          <button className="ghost" onClick={reset}>
+            <RotateCcw size={16} /> Reset Payslip
+          </button>
+        )}
       </header>
 
-      <div className="workspace single-column">
+      <div className="app-layout">
+        <aside className="sidebar">
+          <div className="sidebar-label">MENU</div>
+          <button className={currentPage === 'dashboard' ? 'side-item active' : 'side-item'} onClick={() => setCurrentPage('dashboard')}>
+            <TrendingUp size={17} /> Dashboard
+          </button>
+          <button className={currentPage === 'employees' ? 'side-item active' : 'side-item'} onClick={() => { setCurrentPage('employees'); loadEmployeeRecords(); }}><UserRound size={17} /> Employees</button>
+          <button className={currentPage === 'create' ? 'side-item active' : 'side-item'} onClick={() => setCurrentPage('create')}><FileText size={17} /> Payroll</button>
+          <button className={currentPage === 'payslips' ? 'side-item active' : 'side-item'} onClick={() => { setCurrentPage('payslips'); loadPayslipRecords(); }}><FileText size={17} /> Payslips</button>
+          <div className="sidebar-bottom">
+            <div className="sidebar-company"><Building2 size={16} /><div><b>Deepak Industrial Services</b><small>Payroll System</small></div></div>
+          </div>
+        </aside>
+
+        <div className="main-content">
+          {currentPage === 'dashboard' ? (
+            <Dashboard
+              onCreatePayslip={() => setCurrentPage('create')}
+              onEmployees={() => { setCurrentPage('employees'); loadEmployeeRecords(); }}
+              onViewAll={() => { setCurrentPage('payslips'); loadPayslipRecords(); }}
+              onViewPayslip={(record) => { setCurrentPage('payslips'); setRecords([record]); openSavedPayslip(record); }}
+              stats={dashboardStats}
+              loading={dashboardLoading}
+              recentPayslips={dashboardRecentPayslips}
+            />
+          ) : currentPage === 'employees' ? (
+            <div className="workspace single-column">
+              <section className="panel form-panel">
+                <div className="page-intro">
+                  <div>
+                    <div className="eyebrow"><UserRound size={14} /> EMPLOYEE RECORDS</div>
+                    <h1>Employees</h1>
+                    <p>Search employees and open their previous payslips.</p>
+                  </div>
+                </div>
+
+                <div className="card">
+                  <div className="card-head">
+                    <div className="section-card-title">
+                      <div className="section-icon employee-icon"><Search size={18} /></div>
+                      <div><h3>Find Employee</h3><p>{employeeRecords.length} employee{employeeRecords.length === 1 ? '' : 's'} saved</p></div>
+                    </div>
+                    <button type="button" className="add-button" onClick={loadEmployeeRecords}>Refresh</button>
+                  </div>
+                  <div className="card-content">
+                    <input
+                      value={employeeRecordSearch}
+                      onChange={(e) => setEmployeeRecordSearch(e.target.value)}
+                      placeholder="Search employee name, UAN or ESIC"
+                      style={{ width:'100%', padding:'12px 14px', border:'1px solid #dfe3e8', borderRadius:'9px', fontSize:'14px' }}
+                    />
+                  </div>
+                </div>
+
+                <div className="card">
+                  <div className="card-head">
+                    <div className="section-card-title">
+                      <div className="section-icon pay-icon"><UserRound size={18} /></div>
+                      <div><h3>Saved Employees</h3><p>Select an employee to view their saved payslips.</p></div>
+                    </div>
+                  </div>
+                  <div className="card-content">
+                    {employeeRecordsLoading ? (
+                      <p>Loading employees...</p>
+                    ) : employeeRecordsError ? (
+                      <p style={{ color:'#b42318' }}>{employeeRecordsError}</p>
+                    ) : (() => {
+                      const q = employeeRecordSearch.trim().toLowerCase();
+                      const filtered = employeeRecords.filter((employeeRecord) =>
+                        employeeRecord.name.toLowerCase().includes(q) ||
+                        (employeeRecord.uan || '').toLowerCase().includes(q) ||
+                        (employeeRecord.esic_number || '').toLowerCase().includes(q)
+                      );
+                      return filtered.length === 0 ? (
+                        <p>{q ? 'No employees found.' : 'No employees saved yet. Generate a payslip to create an employee record.'}</p>
+                      ) : (
+                        <div style={{ overflowX:'auto' }}>
+                          <table style={{ width:'100%', borderCollapse:'collapse', fontSize:'14px' }}>
+                            <thead>
+                              <tr>
+                                <th style={{ textAlign:'left', padding:'10px 8px', borderBottom:'1px solid #e4e7ec' }}>Employee</th>
+                                <th style={{ textAlign:'left', padding:'10px 8px', borderBottom:'1px solid #e4e7ec' }}>UAN</th>
+                                <th style={{ textAlign:'left', padding:'10px 8px', borderBottom:'1px solid #e4e7ec' }}>ESIC</th>
+                                <th style={{ textAlign:'right', padding:'10px 8px', borderBottom:'1px solid #e4e7ec' }}>Action</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {filtered.map((employeeRecord) => (
+                                <tr key={employeeRecord.id}>
+                                  <td style={{ padding:'12px 8px', borderBottom:'1px solid #f0f2f5', fontWeight:600 }}>{employeeRecord.name}</td>
+                                  <td style={{ padding:'12px 8px', borderBottom:'1px solid #f0f2f5' }}>{employeeRecord.uan || '—'}</td>
+                                  <td style={{ padding:'12px 8px', borderBottom:'1px solid #f0f2f5' }}>{employeeRecord.esic_number || '—'}</td>
+                                  <td style={{ padding:'12px 8px', textAlign:'right', borderBottom:'1px solid #f0f2f5' }}>
+                                    <button
+                                      type="button"
+                                      className="add-button"
+                                      onClick={() => {
+                                        setRecordSearch(employeeRecord.name);
+                                        setCurrentPage('payslips');
+                                        loadPayslipRecords();
+                                      }}
+                                    >View Payslips</button>
+                                    <button
+                                      type="button"
+                                      className="delete-button"
+                                      onClick={() => deleteEmployeeRecord(employeeRecord)}
+                                      title="Delete employee and all saved payslips"
+                                      style={{ marginLeft: '8px' }}
+                                    >
+                                      <Trash2 size={15} />
+                                      Delete
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </div>
+              </section>
+            </div>
+          ) : currentPage === 'payslips' ? (
+            <div className="workspace single-column">
+              <section className="panel form-panel">
+                <div className="page-intro"><div><div className="eyebrow"><FileText size={14} /> PAYROLL RECORDS</div><h1>Previous Payslips</h1><p>Search an employee and open any previously generated payslip.</p></div></div>
+                <div className="card">
+                  <div className="card-head"><div className="section-card-title"><div className="section-icon pay-icon"><Search size={18} /></div><div><h3>Find Payslip</h3><p>Search by employee name</p></div></div><button type="button" className="add-button" onClick={loadPayslipRecords}>Refresh</button></div>
+                  <div className="card-content"><input value={recordSearch} onChange={(e) => setRecordSearch(e.target.value)} placeholder="Search employee name" style={{ width:'100%', padding:'12px 14px', border:'1px solid #dfe3e8', borderRadius:'9px', fontSize:'14px' }} /></div>
+                </div>
+                <div className="card">
+                  <div className="card-head"><div className="section-card-title"><div className="section-icon earning-icon"><FileText size={18} /></div><div><h3>Saved Payslips</h3><p>{records.length} record{records.length === 1 ? '' : 's'} found</p></div></div></div>
+                  <div className="card-content">
+                    {recordsLoading ? <p>Loading saved payslips...</p> : recordsError ? <p style={{color:'#b42318'}}>{recordsError}</p> : (() => { const filtered = records.filter(r => r.employeeName.toLowerCase().includes(recordSearch.trim().toLowerCase())); return filtered.length === 0 ? <p>No saved payslips found.</p> : <div style={{overflowX:'auto'}}><table style={{width:'100%',borderCollapse:'collapse',fontSize:'14px'}}><thead><tr><th style={{textAlign:'left',padding:'10px 8px',borderBottom:'1px solid #e4e7ec'}}>Employee</th><th style={{textAlign:'left',padding:'10px 8px',borderBottom:'1px solid #e4e7ec'}}>Month</th><th style={{textAlign:'right',padding:'10px 8px',borderBottom:'1px solid #e4e7ec'}}>Gross</th><th style={{textAlign:'right',padding:'10px 8px',borderBottom:'1px solid #e4e7ec'}}>Net</th><th style={{textAlign:'right',padding:'10px 8px',borderBottom:'1px solid #e4e7ec'}}>Action</th></tr></thead><tbody>{filtered.map(record => <tr key={record.id}><td style={{padding:'12px 8px',borderBottom:'1px solid #f0f2f5'}}>{record.employeeName}</td><td style={{padding:'12px 8px',borderBottom:'1px solid #f0f2f5'}}>{payslipMonth(record.pay_date)}</td><td style={{padding:'12px 8px',textAlign:'right',borderBottom:'1px solid #f0f2f5'}}>₹ {money(Number(record.gross_amount)||0)}</td><td style={{padding:'12px 8px',textAlign:'right',borderBottom:'1px solid #f0f2f5'}}>₹ {money(Number(record.net_amount)||0)}</td><td style={{padding:'12px 8px',textAlign:'right',borderBottom:'1px solid #f0f2f5'}}><button type="button" className="add-button" onClick={() => openSavedPayslip(record)}>View</button></td></tr>)}</tbody></table></div>; })()}
+                  </div>
+                </div>
+                {generated && <section className="generated-section" id="saved-slip-preview"><div className="generated-head"><div><div className="preview-label"><FileText size={14} /> SAVED PAYSLIP</div><h2>Previous Payslip</h2><p>Saved record opened from Supabase.</p></div><button className="download" onClick={() => print(generated)}><Download size={18} /> Save as PDF</button></div><Slip data={generated} /></section>}
+              </section>
+            </div>
+          ) : (
+          <div className="workspace single-column">
 
         <section className="panel form-panel">
 
@@ -1251,16 +2005,62 @@ export default function Home() {
                 <label>
                   Employee Name
 
-                  <input
-                    value={employee.name}
-                    onChange={(e) =>
-                      setEmp(
-                        'name',
-                        e.target.value
-                      )
-                    }
-                    placeholder="Enter employee name"
-                  />
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      value={employee.name}
+                      onChange={(e) => {
+                        setEmp('name', e.target.value);
+                        searchEmployees(e.target.value);
+                      }}
+                      onBlur={() => setTimeout(() => setEmployeeMatches([]), 180)}
+                      placeholder="Enter employee name"
+                    />
+
+                    {employeeMatches.length > 0 && (
+                      <div style={{
+                        position: 'absolute',
+                        left: 0,
+                        right: 0,
+                        top: 'calc(100% + 4px)',
+                        background: '#fff',
+                        border: '1px solid #dfe3e8',
+                        borderRadius: '9px',
+                        boxShadow: '0 8px 24px rgba(16,24,40,0.10)',
+                        zIndex: 20,
+                        overflow: 'hidden',
+                      }}>
+                        {employeeMatches.map((match) => (
+                          <button
+                            key={match.id}
+                            type="button"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => selectEmployee(match)}
+                            style={{
+                              display: 'block',
+                              width: '100%',
+                              textAlign: 'left',
+                              padding: '11px 13px',
+                              border: 0,
+                              borderBottom: '1px solid #f0f2f5',
+                              background: '#fff',
+                              cursor: 'pointer',
+                              fontSize: '14px',
+                            }}
+                          >
+                            <b>{match.name}</b>
+                            {(match.uan || match.esic_number) && (
+                              <span style={{ display: 'block', marginTop: '3px', color: '#667085', fontSize: '12px' }}>
+                                {match.uan ? `UAN: ${match.uan}` : ''}{match.uan && match.esic_number ? '  •  ' : ''}{match.esic_number ? `ESIC: ${match.esic_number}` : ''}
+                              </span>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  {employeeLookupLoading && employee.name.trim() && (
+                    <small style={{ color: '#667085', marginTop: '4px' }}>Searching saved employees…</small>
+                  )}
 
                 </label>
 
@@ -1400,7 +2200,7 @@ export default function Home() {
               <div className="grid2">
 
                 <label>
-                  Pay Date
+                  Salary Month
 
                   <input
                     type="date"
@@ -1412,7 +2212,23 @@ export default function Home() {
                       )
                     }
                   />
+                  <small style={{ color: '#667085' }}>Select any date within the salary month.</small>
+                </label>
 
+                <label>
+                  Payment Date
+
+                  <input
+                    type="date"
+                    value={employee.paymentDate}
+                    onChange={(e) =>
+                      setEmp(
+                        'paymentDate',
+                        e.target.value
+                      )
+                    }
+                  />
+                  <small style={{ color: '#667085' }}>Actual date salary is paid.</small>
                 </label>
 
                 <label>
@@ -1552,7 +2368,7 @@ export default function Home() {
               <div className="row-labels">
 
                 <span>Component</span>
-                <span>Rate / Day</span>
+                <span>Rate / Day / OT Hrs</span>
                 <span>Amount</span>
                 <span></span>
 
@@ -1565,6 +2381,9 @@ export default function Home() {
 
                   const isHra =
                     row.name.trim().toUpperCase() === 'HRA';
+
+                  const isOvertime =
+                    row.name.trim().toUpperCase() === 'OVER TIME';
 
                   return (
                     <div
@@ -1594,8 +2413,9 @@ export default function Home() {
                             e.target.value
                           )
                         }
-                        placeholder="Rate"
+                        placeholder={isOvertime ? 'OT Hours' : 'Rate'}
                         readOnly={isHra}
+                        title={isOvertime ? 'Enter overtime hours' : 'Enter rate per day'}
                       />
 
                       <input
@@ -1609,7 +2429,7 @@ export default function Home() {
                           )
                         }
                         placeholder="Amount"
-                        readOnly={isBasic || isHra}
+                        readOnly={isHra}
                       />
 
                       <button
@@ -1975,7 +2795,9 @@ export default function Home() {
           </section>
 
         )}
-
+          </div>
+          )}
+        </div>
       </div>
 
     </main>
