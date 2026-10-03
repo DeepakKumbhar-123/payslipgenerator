@@ -175,29 +175,64 @@ button {
   transform: translateY(-1px);
 }
 
+.payslip-actions,
+.employee-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.employee-actions .add-button,
+.payslip-actions .add-button {
+  margin: 0;
+}
+
 .delete-button {
-  width: 32px;
-  height: 34px;
+  width: auto;
+  min-width: 0;
+  height: auto;
+  min-height: 34px;
 
-  border: 0;
-  border-radius: 7px;
+  border: 1px solid #ead1d1;
+  border-radius: 8px;
 
-  background: transparent;
+  background: #fff;
+  color: #b42318;
 
-  color: #9aa2ae;
+  padding: 8px 11px;
 
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 6px;
 
   cursor: pointer;
 
-  transition: all 0.2s ease;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+
+  white-space: nowrap;
+
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease,
+    color 0.2s ease,
+    transform 0.2s ease;
 }
 
 .delete-button:hover {
-  background: #fff0f0;
-  color: #d64545;
+  background: #fff3f2;
+  border-color: #e5b8b5;
+  color: #9f1c12;
+  transform: translateY(-1px);
+}
+
+.delete-button:active {
+  transform: translateY(0);
 }
 
 /* =========================================================
@@ -2314,3 +2349,594 @@ textarea::placeholder {
   }
 }
 
+
+/* =========================================================
+   MOBILE RESPONSIVE LAYOUT
+   Desktop/tablet layout remains unchanged above this block.
+   ========================================================= */
+@media (max-width: 700px) {
+  html, body { width:100%; min-width:0; overflow-x:hidden; }
+  .appbar { height:62px; padding:0 13px; position:sticky; top:0; z-index:300; }
+  .brand-area { min-width:0; gap:9px; }
+  .brand-icon { width:34px; height:34px; flex:0 0 34px; border-radius:9px; }
+  .brand-area > div:last-child { min-width:0; }
+  .brand-area strong { font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .brand-area span { font-size:9px; margin-top:2px; }
+  .ghost { padding:7px 9px; font-size:10px; white-space:nowrap; }
+
+  .app-layout { display:block; min-height:calc(100vh - 62px); }
+  .sidebar {
+    position:fixed; left:0; right:0; bottom:0; top:auto; z-index:250;
+    width:100% !important; height:64px; min-height:64px; flex:none !important;
+    padding:5px 4px 4px !important; margin:0;
+    display:grid !important; grid-template-columns:repeat(4,minmax(0,1fr)); gap:2px;
+    background:rgba(255,255,255,.98); border-top:1px solid #e3e7ed; border-right:0;
+    box-shadow:0 -5px 20px rgba(20,30,50,.08); backdrop-filter:blur(14px);
+  }
+  .sidebar-label, .sidebar-bottom, .sidebar-company { display:none !important; }
+  .side-item {
+    width:100%; min-width:0; height:54px; min-height:54px; padding:5px 2px !important;
+    border-radius:9px; display:flex !important; flex-direction:column;
+    align-items:center; justify-content:center; gap:3px; font-size:9px; font-weight:700;
+    text-align:center;
+  }
+  .side-item svg { width:18px; height:18px; flex:0 0 auto; }
+  .side-item.active { background:#eef2ff; }
+  .main-content { width:100%; min-width:0; padding-bottom:70px; }
+  .workspace { width:100%; max-width:none; padding:22px 11px 30px !important; margin:0; }
+  .panel { width:100%; min-width:0; gap:12px; }
+  .page-intro { padding:3px 2px 7px; }
+  .page-intro h1 { margin-top:6px; font-size:24px; letter-spacing:-.5px; }
+  .page-intro p { font-size:11px; line-height:1.45; }
+  .eyebrow, .preview-label { font-size:9px; }
+  .card { width:100%; min-width:0; padding:14px; border-radius:12px; }
+  .card-head { gap:10px; margin-bottom:13px; }
+  .section-card-title { min-width:0; gap:8px; }
+  .section-card-title h3 { font-size:13px; }
+  .section-card-title p { display:none; }
+  .section-icon { width:32px; height:32px; flex-basis:32px; }
+  .card-head > .add-button { flex:0 0 auto; }
+  input, textarea, select { max-width:100%; font-size:12px; }
+  .grid2 { grid-template-columns:1fr !important; gap:0; }
+  .custom-row { grid-template-columns:minmax(0,1fr) minmax(0,1fr) 32px; }
+  .row-labels, .row-edit { min-width:360px; }
+  .row-edit { grid-template-columns:1.3fr .7fr 1fr 32px; }
+  .row-edit.ded { grid-template-columns:1.5fr 1fr 1fr 32px; }
+  .card-content { min-width:0; overflow-x:auto; }
+  .total-edit { min-width:0; gap:10px; }
+  .default-logo-note { min-height:68px; padding:9px 10px; }
+  .default-logo-note img { width:90px; height:45px; }
+  .stamp-selected { min-height:70px; padding:9px; }
+  .stamp-selected img { max-width:105px; max-height:45px; }
+  .card-content > div[style*="overflowX"] { width:100%; overflow-x:auto !important; -webkit-overflow-scrolling:touch; }
+  .card-content table { min-width:560px; }
+  .card-content table th, .card-content table td { white-space:nowrap; }
+  .employee-actions, .payslip-actions { gap:6px; }
+  .employee-actions .add-button, .payslip-actions .add-button,
+  .employee-actions .delete-button, .payslip-actions .delete-button {
+    min-height:32px; padding:7px 9px; font-size:10px;
+  }
+  .generated-section { width:100%; min-width:0; overflow:hidden; }
+  .generated-head { gap:10px; align-items:stretch; }
+  .generated-head .download { width:100%; }
+  .paper {
+    width:100% !important; max-width:100% !important; height:auto !important;
+    min-height:0 !important; margin:0 !important; padding:12px 10px !important;
+    overflow:hidden !important; transform:none !important;
+  }
+  .slip-head {
+    grid-template-columns:72px minmax(0,1fr) 82px !important;
+    min-height:72px !important; height:auto !important; gap:6px;
+  }
+  .slip-head img { max-width:64px !important; max-height:52px !important; }
+  .company-name { font-size:11px !important; line-height:1.15; }
+  .address { font-size:7px !important; line-height:1.25; }
+  .month-head { min-width:0; }
+  .month-head div { font-size:6px !important; }
+  .month-head strong { font-size:8px !important; }
+  .employee-box { padding:7px !important; }
+  .employee-box p { grid-template-columns:72px 8px minmax(0,1fr) !important; font-size:7px !important; }
+  .salary { width:100%; font-size:7px !important; table-layout:fixed; }
+  .salary th { font-size:7px !important; padding:4px 2px !important; }
+  .salary td { padding:3px 2px !important; height:18px !important; word-break:break-word; }
+  .salary .totals td, .netrow td { font-size:7px !important; }
+  .amount-box { font-size:7px !important; padding:6px !important; }
+  .amount-box b { font-size:9px !important; }
+  .foot { font-size:6px !important; }
+}
+
+@media (max-width:420px) {
+  .appbar { padding:0 10px; }
+  .brand-icon { width:32px; height:32px; flex-basis:32px; }
+  .brand-area { gap:7px; }
+  .brand-area strong { font-size:12px; }
+  .brand-area span { font-size:8px; }
+  .ghost { padding:6px 7px; font-size:9px; }
+  .workspace { padding-left:9px !important; padding-right:9px !important; }
+  .card { padding:12px; }
+  .page-intro h1 { font-size:22px; }
+  .side-item { font-size:8px; }
+  .side-item svg { width:17px; height:17px; }
+  .slip-head { grid-template-columns:60px minmax(0,1fr) 70px !important; }
+  .slip-head img { max-width:54px !important; }
+  .company-name { font-size:10px !important; }
+  .address { font-size:6px !important; }
+  .month-head div { font-size:5.5px !important; }
+  .month-head strong { font-size:7px !important; }
+}
+
+
+/* =========================================================
+   MOBILE RESPONSIVE FIX
+   ========================================================= */
+
+@media (max-width: 700px) {
+
+  html,
+  body {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  body {
+    min-width: 0;
+  }
+
+  /* TOP BAR */
+  .appbar {
+    height: 60px;
+    padding: 0 13px;
+    position: sticky;
+    top: 0;
+  }
+
+  .brand-area {
+    min-width: 0;
+    gap: 9px;
+  }
+
+  .brand-icon {
+    width: 34px;
+    height: 34px;
+    flex: 0 0 34px;
+  }
+
+  .brand-area strong {
+    font-size: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .brand-area span {
+    font-size: 9px;
+  }
+
+  .ghost {
+    padding: 7px 9px;
+    font-size: 10px;
+    flex: 0 0 auto;
+  }
+
+  /* MAIN APP LAYOUT */
+  .app-layout {
+    display: block;
+    width: 100%;
+    min-height: calc(100vh - 60px);
+  }
+
+  /* MOBILE BOTTOM NAV */
+  .sidebar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    top: auto;
+
+    width: 100%;
+    height: 64px;
+
+    flex: none;
+
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+
+    padding: 5px 4px;
+    margin: 0;
+
+    background: rgba(255, 255, 255, 0.98);
+    border-right: 0;
+    border-top: 1px solid #e5e8ee;
+
+    box-shadow: 0 -4px 18px rgba(20, 30, 50, 0.08);
+
+    z-index: 999;
+  }
+
+  .sidebar-label,
+  .sidebar-bottom {
+    display: none !important;
+  }
+
+  .side-item {
+    width: 100%;
+    min-width: 0;
+    min-height: 54px;
+
+    padding: 5px 2px;
+
+    border: 0;
+    border-radius: 9px;
+
+    background: transparent;
+
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+
+    gap: 3px;
+
+    color: #7a8392;
+
+    font-size: 9px;
+    font-weight: 700;
+
+    overflow: hidden;
+  }
+
+  .side-item span {
+    display: block !important;
+
+    max-width: 100%;
+
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .side-item svg {
+    flex: 0 0 auto;
+  }
+
+  .side-item.active {
+    background: #eef2ff;
+    color: #4f63c8;
+  }
+
+  /* MAIN CONTENT */
+  .main-content {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+
+    padding-bottom: 76px;
+
+    overflow-x: hidden;
+  }
+
+  /* WORKSPACE */
+  .workspace {
+    width: 100%;
+    max-width: 100%;
+
+    margin: 0;
+    padding: 20px 12px 35px;
+  }
+
+  .panel {
+    width: 100%;
+    min-width: 0;
+  }
+
+  /* PAGE HEADER */
+  .page-intro {
+    padding: 3px 2px 8px;
+  }
+
+  .page-intro h1 {
+    font-size: 23px;
+  }
+
+  .page-intro p {
+    font-size: 11px;
+    line-height: 1.45;
+  }
+
+  /* CARDS */
+  .card {
+    width: 100%;
+    max-width: 100%;
+
+    padding: 14px;
+
+    border-radius: 12px;
+
+    overflow: hidden;
+  }
+
+  .card-head {
+    width: 100%;
+    gap: 8px;
+  }
+
+  .section-card-title {
+    min-width: 0;
+  }
+
+  .section-card-title > div:last-child {
+    min-width: 0;
+  }
+
+  .section-card-title h3 {
+    font-size: 13px;
+  }
+
+  /* FORMS */
+  .grid2 {
+    width: 100%;
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+
+  label {
+    width: 100%;
+  }
+
+  input,
+  textarea {
+    width: 100%;
+    max-width: 100%;
+    font-size: 12px;
+  }
+
+  /* CUSTOM EMPLOYEE FIELDS */
+  .custom-row {
+    width: 100%;
+
+    grid-template-columns: minmax(0, 1fr) 32px;
+    gap: 7px;
+  }
+
+  .custom-row input:first-child {
+    grid-column: 1 / -1;
+  }
+
+  .custom-row input:nth-child(2) {
+    grid-column: 1;
+  }
+
+  .custom-row .delete-button {
+    grid-column: 2;
+    grid-row: 2;
+  }
+
+  /* EARNINGS / DEDUCTIONS */
+  .row-labels {
+    display: none;
+  }
+
+  .row-edit,
+  .row-edit.ded {
+    width: 100%;
+
+    grid-template-columns:
+      minmax(0, 1fr)
+      minmax(0, 1fr)
+      32px;
+
+    gap: 7px;
+  }
+
+  .row-edit input:first-child {
+    grid-column: 1 / -1;
+  }
+
+  .row-edit input:nth-child(2) {
+    grid-column: 1;
+  }
+
+  .row-edit input:nth-child(3) {
+    grid-column: 2;
+  }
+
+  .row-edit .delete-button {
+    grid-column: 3;
+    grid-row: 2;
+  }
+
+  /* BUTTONS */
+  .add-button {
+    min-height: 34px;
+    padding: 7px 9px;
+    white-space: nowrap;
+  }
+
+  .generate {
+    min-height: 48px;
+  }
+
+  /* GENERATED PREVIEW */
+  .generated-section {
+    width: 100%;
+    max-width: 100%;
+    margin-top: 25px;
+  }
+
+  .generated-head {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .generated-head h2 {
+    font-size: 18px;
+  }
+
+  .download {
+    width: 100%;
+  }
+
+  /* PAYSLIP PREVIEW */
+  .paper {
+    width: 100%;
+    max-width: 100%;
+
+    padding: 14px 10px;
+
+    overflow-x: auto;
+  }
+
+  .slip-head {
+    grid-template-columns: 75px minmax(0, 1fr);
+    min-height: 75px;
+  }
+
+  .slip-head img {
+    max-width: 68px;
+    max-height: 50px;
+  }
+
+  .company-head {
+    min-width: 0;
+    padding-right: 0;
+  }
+
+  .company-name {
+    font-size: 12px;
+  }
+
+  .address {
+    font-size: 8px;
+    line-height: 1.25;
+  }
+
+  .month-head {
+    grid-column: 1 / -1;
+
+    text-align: left;
+    align-items: flex-start;
+
+    padding-top: 7px;
+  }
+
+  .month-head div {
+    font-size: 8px;
+  }
+
+  .month-head strong {
+    font-size: 10px;
+  }
+
+  .employee-box {
+    grid-template-columns: 1fr;
+    padding: 7px;
+  }
+
+  .employee-box p {
+    grid-template-columns: 82px 10px minmax(0, 1fr);
+    font-size: 8px;
+  }
+
+  /* TABLES */
+  .card-content {
+    min-width: 0;
+  }
+
+  .card-content > div[style*="overflowX"],
+  .card-content > div[style*="overflow-x"] {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  table {
+    max-width: none;
+  }
+
+  /* DASHBOARD */
+  .dashboard-page {
+    width: 100%;
+    min-width: 0;
+    padding: 20px 12px 35px;
+  }
+
+  .dashboard-container {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .dashboard-intro {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .dashboard-primary {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .stats-grid {
+    grid-template-columns: 1fr;
+    width: 100%;
+  }
+
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+    width: 100%;
+  }
+
+  .dashboard-card {
+    width: 100%;
+    min-width: 0;
+    padding: 15px;
+  }
+}
+
+
+/* SMALL PHONES */
+@media (max-width: 380px) {
+
+  .appbar {
+    padding: 0 9px;
+  }
+
+  .brand-icon {
+    width: 31px;
+    height: 31px;
+    flex-basis: 31px;
+  }
+
+  .brand-area strong {
+    font-size: 11px;
+  }
+
+  .brand-area span {
+    font-size: 8px;
+  }
+
+  .workspace {
+    padding-left: 9px;
+    padding-right: 9px;
+  }
+
+  .card {
+    padding: 12px;
+  }
+
+  .side-item {
+    font-size: 8px;
+  }
+
+  .side-item svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .page-intro h1 {
+    font-size: 21px;
+  }
+}

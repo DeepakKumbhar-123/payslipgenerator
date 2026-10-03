@@ -620,6 +620,7 @@ export default function Home() {
 
   const [generated, setGenerated] =
     useState<PayslipData | null>(null);
+  const [generatedRecordId, setGeneratedRecordId] = useState<string | null>(null);
 
   const [currentPage, setCurrentPage] = useState<'dashboard' | 'employees' | 'create' | 'payslips'>('dashboard');
   const [records, setRecords] = useState<PayslipRecord[]>([]);
@@ -657,6 +658,44 @@ export default function Home() {
     }
 
     setEmployeeRecordsLoading(false);
+  };
+
+  const deletePayslipRecord = async (record: PayslipRecord) => {
+    const confirmed = window.confirm(
+      `Delete payslip for ${record.employeeName} - ${payslipMonth(record.pay_date)}?\n\n` +
+      `Only this payslip will be deleted. The employee and other payslips will remain.\n\n` +
+      `This action cannot be undone.`
+    );
+
+    if (!confirmed) return;
+
+    setRecordsError('');
+
+    const { error } = await supabase
+      .from('payslips')
+      .delete()
+      .eq('id', record.id);
+
+    if (error) {
+      console.error('Payslip delete error:', error);
+      setRecordsError(`Could not delete payslip: ${error.message}`);
+      return;
+    }
+
+    setRecords((current) =>
+      current.filter((item) => item.id !== record.id)
+    );
+
+    setDashboardRecentPayslips((current) =>
+      current.filter((item) => item.id !== record.id)
+    );
+
+    if (generatedRecordId === record.id) {
+      setGenerated(null);
+      setGeneratedRecordId(null);
+    }
+
+    await loadDashboardStats();
   };
 
   const deleteEmployeeRecord = async (employeeRecord: EmployeeRecord) => {
@@ -1065,6 +1104,7 @@ export default function Home() {
   };
 
   const openSavedPayslip = (record: PayslipRecord) => {
+    setGeneratedRecordId(record.id);
     const snapshot = record.employee_snapshot as (Employee & { __advance?: PayslipData['advance']; __company?: Company; __stamp?: string }) | null;
     const savedAdvance = snapshot?.__advance;
     const fallbackAdvanceTotal = Number((record as any).advance_total) || 0;
@@ -1207,7 +1247,7 @@ export default function Home() {
 
     const netAmount = grossAmount - totalDeductionAmount;
 
-    const { error: payslipError } = await supabase
+    const { data: savedPayslip, error: payslipError } = await supabase
       .from('payslips')
       .insert({
         employee_id: savedEmployee.id,
@@ -1250,7 +1290,9 @@ export default function Home() {
         pay_fields_snapshot: payFields.map((field) => ({
           ...field,
         })),
-      });
+      })
+      .select('id')
+      .single();
 
     if (payslipError) {
   console.error('PAYSLIP SAVE ERROR:', payslipError);
@@ -1259,6 +1301,8 @@ export default function Home() {
   );
   return;
 }
+
+    setGeneratedRecordId(savedPayslip?.id || null);
 
     const generatedPayslipData: PayslipData = {
       company: {
@@ -1361,6 +1405,7 @@ export default function Home() {
     setStamp('');
 
     setGenerated(null);
+    setGeneratedRecordId(null);
   };
 
   /* SAVE DIRECTLY AS A5 PDF */
@@ -1811,26 +1856,37 @@ export default function Home() {
                                   <td style={{ padding:'12px 8px', borderBottom:'1px solid #f0f2f5', fontWeight:600 }}>{employeeRecord.name}</td>
                                   <td style={{ padding:'12px 8px', borderBottom:'1px solid #f0f2f5' }}>{employeeRecord.uan || '—'}</td>
                                   <td style={{ padding:'12px 8px', borderBottom:'1px solid #f0f2f5' }}>{employeeRecord.esic_number || '—'}</td>
-                                  <td style={{ padding:'12px 8px', textAlign:'right', borderBottom:'1px solid #f0f2f5' }}>
-                                    <button
-                                      type="button"
-                                      className="add-button"
-                                      onClick={() => {
-                                        setRecordSearch(employeeRecord.name);
-                                        setCurrentPage('payslips');
-                                        loadPayslipRecords();
-                                      }}
-                                    >View Payslips</button>
-                                    <button
-                                      type="button"
-                                      className="delete-button"
-                                      onClick={() => deleteEmployeeRecord(employeeRecord)}
-                                      title="Delete employee and all saved payslips"
-                                      style={{ marginLeft: '8px' }}
-                                    >
-                                      <Trash2 size={15} />
-                                      Delete
-                                    </button>
+                                  <td
+                                    style={{
+                                      padding: '12px 8px',
+                                      textAlign: 'right',
+                                      borderBottom: '1px solid #f0f2f5',
+                                      whiteSpace: 'nowrap',
+                                    }}
+                                  >
+                                    <div className="employee-actions">
+                                      <button
+                                        type="button"
+                                        className="add-button"
+                                        onClick={() => {
+                                          setRecordSearch(employeeRecord.name);
+                                          setCurrentPage('payslips');
+                                          loadPayslipRecords();
+                                        }}
+                                      >
+                                        View Payslips
+                                      </button>
+
+                                      <button
+                                        type="button"
+                                        className="delete-button"
+                                        onClick={() => deleteEmployeeRecord(employeeRecord)}
+                                        title="Delete employee and all saved payslips"
+                                      >
+                                        <Trash2 size={15} />
+                                        <span>Delete</span>
+                                      </button>
+                                    </div>
                                   </td>
                                 </tr>
                               ))}
@@ -1854,7 +1910,34 @@ export default function Home() {
                 <div className="card">
                   <div className="card-head"><div className="section-card-title"><div className="section-icon earning-icon"><FileText size={18} /></div><div><h3>Saved Payslips</h3><p>{records.length} record{records.length === 1 ? '' : 's'} found</p></div></div></div>
                   <div className="card-content">
-                    {recordsLoading ? <p>Loading saved payslips...</p> : recordsError ? <p style={{color:'#b42318'}}>{recordsError}</p> : (() => { const filtered = records.filter(r => r.employeeName.toLowerCase().includes(recordSearch.trim().toLowerCase())); return filtered.length === 0 ? <p>No saved payslips found.</p> : <div style={{overflowX:'auto'}}><table style={{width:'100%',borderCollapse:'collapse',fontSize:'14px'}}><thead><tr><th style={{textAlign:'left',padding:'10px 8px',borderBottom:'1px solid #e4e7ec'}}>Employee</th><th style={{textAlign:'left',padding:'10px 8px',borderBottom:'1px solid #e4e7ec'}}>Month</th><th style={{textAlign:'right',padding:'10px 8px',borderBottom:'1px solid #e4e7ec'}}>Gross</th><th style={{textAlign:'right',padding:'10px 8px',borderBottom:'1px solid #e4e7ec'}}>Net</th><th style={{textAlign:'right',padding:'10px 8px',borderBottom:'1px solid #e4e7ec'}}>Action</th></tr></thead><tbody>{filtered.map(record => <tr key={record.id}><td style={{padding:'12px 8px',borderBottom:'1px solid #f0f2f5'}}>{record.employeeName}</td><td style={{padding:'12px 8px',borderBottom:'1px solid #f0f2f5'}}>{payslipMonth(record.pay_date)}</td><td style={{padding:'12px 8px',textAlign:'right',borderBottom:'1px solid #f0f2f5'}}>₹ {money(Number(record.gross_amount)||0)}</td><td style={{padding:'12px 8px',textAlign:'right',borderBottom:'1px solid #f0f2f5'}}>₹ {money(Number(record.net_amount)||0)}</td><td style={{padding:'12px 8px',textAlign:'right',borderBottom:'1px solid #f0f2f5'}}><button type="button" className="add-button" onClick={() => openSavedPayslip(record)}>View</button></td></tr>)}</tbody></table></div>; })()}
+                    {recordsLoading ? <p>Loading saved payslips...</p> : recordsError ? <p style={{color:'#b42318'}}>{recordsError}</p> : (() => { const filtered = records.filter(r => r.employeeName.toLowerCase().includes(recordSearch.trim().toLowerCase())); return filtered.length === 0 ? <p>No saved payslips found.</p> : <div style={{overflowX:'auto'}}><table style={{width:'100%',borderCollapse:'collapse',fontSize:'14px'}}><thead><tr><th style={{textAlign:'left',padding:'10px 8px',borderBottom:'1px solid #e4e7ec'}}>Employee</th><th style={{textAlign:'left',padding:'10px 8px',borderBottom:'1px solid #e4e7ec'}}>Month</th><th style={{textAlign:'right',padding:'10px 8px',borderBottom:'1px solid #e4e7ec'}}>Gross</th><th style={{textAlign:'right',padding:'10px 8px',borderBottom:'1px solid #e4e7ec'}}>Net</th><th style={{textAlign:'right',padding:'10px 8px',borderBottom:'1px solid #e4e7ec'}}>Action</th></tr></thead><tbody>{filtered.map(record => <tr key={record.id}><td style={{padding:'12px 8px',borderBottom:'1px solid #f0f2f5'}}>{record.employeeName}</td><td style={{padding:'12px 8px',borderBottom:'1px solid #f0f2f5'}}>{payslipMonth(record.pay_date)}</td><td style={{padding:'12px 8px',textAlign:'right',borderBottom:'1px solid #f0f2f5'}}>₹ {money(Number(record.gross_amount)||0)}</td><td style={{padding:'12px 8px',textAlign:'right',borderBottom:'1px solid #f0f2f5'}}>₹ {money(Number(record.net_amount)||0)}</td><td
+  style={{
+    padding: '12px 8px',
+    textAlign: 'right',
+    borderBottom: '1px solid #f0f2f5',
+    whiteSpace: 'nowrap',
+  }}
+>
+  <div className="payslip-actions">
+    <button
+      type="button"
+      className="add-button"
+      onClick={() => openSavedPayslip(record)}
+    >
+      View
+    </button>
+
+    <button
+      type="button"
+      className="delete-button"
+      onClick={() => deletePayslipRecord(record)}
+      title="Delete this payslip only"
+    >
+      <Trash2 size={15} />
+      <span>Delete</span>
+    </button>
+  </div>
+</td></tr>)}</tbody></table></div>; })()}
                   </div>
                 </div>
                 {generated && <section className="generated-section" id="saved-slip-preview"><div className="generated-head"><div><div className="preview-label"><FileText size={14} /> SAVED PAYSLIP</div><h2>Previous Payslip</h2><p>Saved record opened from Supabase.</p></div><button className="download" onClick={() => print(generated)}><Download size={18} /> Save as PDF</button></div><Slip data={generated} /></section>}
