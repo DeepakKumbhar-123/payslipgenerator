@@ -137,7 +137,9 @@ function rateDisplay(
 ) {
   if (value === '' || value === null || value === undefined) return '';
 
-  const n = Number(value);
+  const text = String(value).trim();
+  const isPercent = text.includes('%');
+  const n = Number(text.replace('%', '').trim());
   if (!Number.isFinite(n) || n === 0) return '';
 
   const formatted = n.toLocaleString('en-IN', {
@@ -145,7 +147,9 @@ function rateDisplay(
     maximumFractionDigits: 2,
   });
 
-  return isOvertime ? `${formatted} hrs` : formatted;
+  if (isOvertime) return `${formatted} hrs`;
+  if (isPercent) return `${formatted}%`;
+  return formatted;
 }
 
 function payslipMonth(value: string) {
@@ -868,11 +872,10 @@ export default function Home() {
 
       // BASIC uses a fixed 26-day structure.
       // You can enter either Rate Per Day OR BASIC Amount directly.
-      // IMPORTANT: clearing Rate Per Day must NOT clear BASIC Amount.
+      // HRA percentage is employee-specific and is never forced to 10%.
       if (changedName === 'BASIC' && (key === 'rate' || key === 'amount')) {
         if (key === 'rate') {
           // If the user clears Rate Per Day, keep the existing BASIC amount.
-          // Only recalculate when a numeric rate is actually entered.
           if (value.trim() === '') {
             return updated;
           }
@@ -894,10 +897,14 @@ export default function Home() {
             }
 
             if (name === 'HRA') {
+              const hraPercent =
+                Number(String(row.rate || '').replace('%', '').trim()) || 0;
+
               return {
                 ...row,
-                rate: '10%',
-                amount: String(basicAmount * 0.10),
+                amount: basicAmount
+                  ? String(basicAmount * (hraPercent / 100))
+                  : '',
               };
             }
 
@@ -923,10 +930,47 @@ export default function Home() {
           }
 
           if (name === 'HRA') {
+            const hraPercent =
+              Number(String(row.rate || '').replace('%', '').trim()) || 0;
+
             return {
               ...row,
-              rate: '10%',
-              amount: basicAmount ? String(basicAmount * 0.10) : '',
+              amount: basicAmount
+                ? String(basicAmount * (hraPercent / 100))
+                : '',
+            };
+          }
+
+          return row;
+        });
+      }
+
+      // HRA percentage is entered manually for each employee.
+      // Example: 5% or 5 → HRA is calculated from BASIC.
+      if (changedName === 'HRA' && key === 'rate') {
+        const hraPercent =
+          Number(value.replace('%', '').trim());
+
+        if (!Number.isFinite(hraPercent)) {
+          return updated;
+        }
+
+        const basicRow = updated.find(
+          (row) => row.name.trim().toUpperCase() === 'BASIC'
+        );
+
+        const basicAmount = Number(basicRow?.amount) || 0;
+
+        return updated.map((row) => {
+          const name = row.name.trim().toUpperCase();
+
+          if (name === 'HRA') {
+            return {
+              ...row,
+              rate: value,
+              amount: basicAmount
+                ? String(basicAmount * (hraPercent / 100))
+                : '',
             };
           }
 
@@ -1257,7 +1301,7 @@ export default function Home() {
         present_days: Number(employee.present) || 0,
         basic_rate_per_day: Number(basicRow?.rate) || 0,
         hra_percent:
-          Number(String(hraRow?.rate || '10').replace('%', '')) || 0,
+          Number(String(hraRow?.rate || '').replace('%', '')) || 0,
         esic_amount: Number(esicRow?.amount) || 0,
         con_amount: Number(conRow?.amount) || 0,
         other_allowance: Number(otherAllowanceRow?.amount) || 0,
@@ -2496,9 +2540,20 @@ export default function Home() {
                             e.target.value
                           )
                         }
-                        placeholder={isOvertime ? 'OT Hours' : 'Rate'}
-                        readOnly={isHra}
-                        title={isOvertime ? 'Enter overtime hours' : 'Enter rate per day'}
+                        placeholder={
+                          isHra
+                            ? 'HRA %'
+                            : isOvertime
+                              ? 'OT Hours'
+                              : 'Rate'
+                        }
+                        title={
+                          isHra
+                            ? 'Enter HRA percentage, e.g. 5% or 10%'
+                            : isOvertime
+                              ? 'Enter overtime hours'
+                              : 'Enter rate per day'
+                        }
                       />
 
                       <input
